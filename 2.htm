@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Career Guidance System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .modal {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .modal.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword, 
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            collection, 
+            addDoc, 
+            query, 
+            where, 
+            onSnapshot
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // IMPORTANT: For local development, replace the placeholder below with your actual Firebase project config.
+        // You can find this in your Firebase Console -> Project Settings -> Your apps -> Firebase SDK snippet
+        const localFirebaseConfig = {
+         apiKey: "AIzaSyAdFacKpfnIZudtHY30x_GC5-xwegdh1TI",
+         authDomain: "career-guidance-23a5c.firebaseapp.com",
+         projectId: "career-guidance-23a5c",
+         storageBucket: "career-guidance-23a5c.firebasestorage.app",
+         messagingSenderId: "375027497963",
+         appId: "1:375027497963:web:1efe2bd058552b0335b7ae",
+         measurementId: "G-HY64BQG5GG"
+        }
+        // This allows the code to work both in the Gemini environment and locally.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : localFirebaseConfig;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth;
+        let userId;
+
+        // UI elements
+        const authContainer = document.getElementById('auth-container');
+        const appContainer = document.getElementById('app-container');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('login-btn');
+        const signupBtn = document.getElementById('signup-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const messageDisplay = document.getElementById('message-display');
+        const interestsInput = document.getElementById('interests-input');
+        const guidanceBtn = document.getElementById('guidance-btn');
+        const recommendationsList = document.getElementById('recommendations-list');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const profileForm = document.getElementById('profile-form');
+        const saveProfileBtn = document.getElementById('save-profile-btn');
+        const profileStatus = document.getElementById('profile-status');
+        const viewMyResultsBtn = document.getElementById('view-my-results-btn');
+
+        // Simple message display function
+        const showMessage = (message, isError = false) => {
+            messageDisplay.textContent = message;
+            messageDisplay.classList.remove('hidden', 'bg-red-500', 'bg-green-500');
+            if (isError) {
+                messageDisplay.classList.add('bg-red-500');
+            } else {
+                messageDisplay.classList.add('bg-green-500');
+            }
+            setTimeout(() => {
+                messageDisplay.classList.add('hidden');
+            }, 3000);
+        };
+
+        // Firebase Initialization and Authentication
+        const setupFirebase = async () => {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Sign in with the provided custom token or anonymously
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Listen for auth state changes
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = `User ID: ${userId}`;
+                        authContainer.classList.add('hidden');
+                        appContainer.classList.remove('hidden');
+                        listenForUserRecommendations();
+                        loadUserProfile();
+                    } else {
+                        authContainer.classList.remove('hidden');
+                        appContainer.classList.add('hidden');
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error setting up Firebase:", error);
+                showMessage("Firebase setup failed. Check console for details.", true);
+            }
+        };
+
+        // Load user profile from Firestore
+        const loadUserProfile = async () => {
+            try {
+                const profileDocRef = doc(db, 'artifacts', appId, 'users', userId);
+                const profileDoc = await getDoc(profileDocRef);
+                if (profileDoc.exists()) {
+                    const profileData = profileDoc.data();
+                    if (profileData.interests) {
+                        interestsInput.value = profileData.interests;
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading user profile:", error);
+            }
+        };
+
+        // Save user profile to Firestore
+        saveProfileBtn.addEventListener('click', async () => {
+            const interests = interestsInput.value;
+            if (interests.trim() === '') {
+                showMessage("Please enter your interests before saving.", true);
+                return;
+            }
+            try {
+                const profileDocRef = doc(db, 'artifacts', appId, 'users', userId);
+                await setDoc(profileDocRef, { interests }, { merge: true });
+                profileStatus.textContent = 'Profile saved!';
+                setTimeout(() => profileStatus.textContent = '', 2000);
+            } catch (error) {
+                console.error("Error saving profile:", error);
+                showMessage("Failed to save profile.", true);
+            }
+        });
+
+        // Generate career recommendations using the Gemini API
+        guidanceBtn.addEventListener('click', async () => {
+            const interests = interestsInput.value;
+            if (interests.trim() === '') {
+                showMessage("Please enter your interests to get guidance.", true);
+                return;
+            }
+
+            loadingIndicator.classList.remove('hidden');
+            recommendationsList.innerHTML = '';
+            
+            try {
+                const systemPrompt = "You are a career guidance counselor. Provide a list of 5 career recommendations based on the user's interests. For each recommendation, include the career name and a brief, one-sentence explanation of why it fits the user's interests. Present the response as a numbered list.";
+                const userQuery = `My interests are: ${interests}. What careers would you recommend?`;
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    tools: [{ "google_search": {} }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API call failed with status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+                const generatedText = candidate?.content?.parts?.[0]?.text;
+
+                if (generatedText) {
+                    // Save the recommendation to Firestore
+                    const recommendationsRef = collection(db, 'artifacts', appId, 'users', userId, 'recommendations');
+                    await addDoc(recommendationsRef, {
+                        interests: interests,
+                        recommendations: generatedText,
+                        timestamp: new Date()
+                    });
+                    
+                    displayRecommendations(generatedText);
+                    showMessage("Recommendations generated and saved!", false);
+                } else {
+                    showMessage("No recommendations could be generated. Please try again.", true);
+                }
+
+            } catch (error) {
+                console.error("Error getting career guidance:", error);
+                showMessage("Failed to get guidance. Check console for details.", true);
+            } finally {
+                loadingIndicator.classList.add('hidden');
+            }
+        });
+
+        // Listen for real-time updates to user's recommendations
+        const listenForUserRecommendations = () => {
+            const q = query(collection(db, 'artifacts', appId, 'users', userId, 'recommendations'));
+            onSnapshot(q, (querySnapshot) => {
+                recommendationsList.innerHTML = '';
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const li = document.createElement('li');
+                    li.className = 'bg-gray-50 p-4 rounded-lg shadow-sm mb-2';
+                    li.innerHTML = `
+                        <h4 class="font-bold text-gray-800">Interests: ${data.interests}</h4>
+                        <pre class="mt-2 text-gray-700 whitespace-pre-wrap">${data.recommendations}</pre>
+                        <span class="block text-xs text-gray-500 mt-2">${new Date(data.timestamp.toDate()).toLocaleString()}</span>
+                    `;
+                    recommendationsList.appendChild(li);
+                });
+            });
+        };
+
+        const displayRecommendations = (text) => {
+            recommendationsList.innerHTML = '';
+            const li = document.createElement('li');
+            li.className = 'bg-gray-50 p-4 rounded-lg shadow-sm mb-2';
+            li.innerHTML = `<pre class="text-gray-700 whitespace-pre-wrap">${text}</pre>`;
+            recommendationsList.appendChild(li);
+        };
+
+        // Event Listeners for Authentication
+        loginBtn.addEventListener('click', async () => {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                console.error("Login failed:", error);
+                showMessage(`Login failed: ${error.message}`, true);
+            }
+        });
+
+        signupBtn.addEventListener('click', async () => {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid);
+                await setDoc(userDocRef, { email: user.email });
+                showMessage("Signup successful!", false);
+            } catch (error) {
+                console.error("Sign up failed:", error);
+                showMessage(`Sign up failed: ${error.message}`, true);
+            }
+        });
+
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                showMessage("Logged out successfully.", false);
+            } catch (error) {
+                console.error("Logout failed:", error);
+                showMessage("Logout failed. Check console for details.", true);
+            }
+        });
+
+        // Start the application
+        window.onload = setupFirebase;
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center font-sans p-4">
+
+    <!-- Authentication Container -->
+    <div id="auth-container" class="w-full max-w-md bg-white p-8 rounded-xl shadow-lg transition-all duration-300">
+        <h2 class="text-3xl font-bold text-center mb-6 text-gray-800">Welcome</h2>
+        <div class="space-y-4">
+            <input type="email" id="email" placeholder="Email" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+            <input type="password" id="password" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+        </div>
+        <div class="mt-6 flex flex-col space-y-3">
+            <button id="login-btn" class="w-full p-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-lg transform hover:scale-105">Login</button>
+            <button id="signup-btn" class="w-full p-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg transform hover:scale-105">Sign Up</button>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <div id="app-container" class="w-full max-w-2xl bg-white p-8 rounded-xl shadow-lg hidden">
+        <header class="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+            <h1 class="text-3xl font-bold text-gray-800">Career Guidance System</h1>
+            <div class="flex items-center space-x-4">
+                <span id="user-id-display" class="text-sm text-gray-500"></span>
+                <button id="logout-btn" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors transform hover:scale-105">Logout</button>
+            </div>
+        </header>
+
+        <!-- Message Display -->
+        <div id="message-display" class="hidden bg-green-500 text-white p-3 rounded-lg mb-4 text-center"></div>
+
+        <!-- Career Guidance Form -->
+        <div class="space-y-4">
+            <h2 class="text-2xl font-semibold text-gray-700">Enter Your Interests</h2>
+            <textarea id="interests-input" placeholder="e.g., technology, art, helping people, finance" rows="4" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"></textarea>
+            <div class="flex justify-between items-center">
+                <button id="guidance-btn" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-lg transform hover:scale-105">Get Recommendations</button>
+                <div id="loading-indicator" class="hidden">
+                    <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button id="save-profile-btn" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm">Save Interests</button>
+                <span id="profile-status" class="text-sm text-gray-600 self-center"></span>
+            </div>
+        </div>
+
+        <hr class="my-6 border-t border-gray-200">
+
+        <!-- Recommendations Display -->
+        <div class="space-y-4">
+            <h2 class="text-2xl font-semibold text-gray-700">My Recommendations</h2>
+            <ul id="recommendations-list" class="space-y-4">
+                <!-- Recommendations will be populated here -->
+            </ul>
+        </div>
+    </div>
+
+</body>
+</html>
