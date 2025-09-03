@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Career Compass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            transition: background-color 0.3s ease;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 2rem;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.05);
+            padding: 2.5rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
+        }
+        input, button {
+            transition: all 0.2s ease-in-out;
+        }
+        input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary {
+            background-color: #4f46e5;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca;
+        }
+        .btn-secondary {
+            background-color: #e5e7eb;
+            color: #4b5563;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-weight: 500;
+            text-align: center;
+            cursor: pointer;
+        }
+        .btn-secondary:hover {
+            background-color: #d1d5db;
+        }
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
+        .progress-bar {
+            height: 8px;
+            background-color: #e5e7eb;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4f46e5;
+            transition: width 0.3s ease;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div id="app" class="container">
+        <!-- Message Box Modal -->
+        <div id="message-box" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 hidden">
+            <div class="bg-white p-6 rounded-xl shadow-lg w-96 text-center">
+                <p id="message-text" class="text-lg text-gray-800 font-semibold mb-4"></p>
+                <button id="message-close" class="btn-primary w-full">OK</button>
+            </div>
+        </div>
+
+        <!-- Authentication Page -->
+        <div id="auth-page" class="page active text-center fade-in">
+            <div class="card">
+                <h1 class="text-4xl font-bold mb-4 text-gray-800">Career Compass</h1>
+                <p class="text-gray-600 mb-8">Find your path with personalized career recommendations.</p>
+                <div class="space-y-4 max-w-sm mx-auto">
+                    <input id="auth-email" type="email" placeholder="Email" class="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500">
+                    <input id="auth-password" type="password" placeholder="Password" class="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500">
+                    <button id="login-btn" class="btn-primary w-full">Log In</button>
+                    <button id="signup-btn" class="btn-secondary w-full">Sign Up</button>
+                </div>
+                <div id="auth-error-message" class="text-red-500 mt-4 text-sm hidden"></div>
+            </div>
+        </div>
+
+        <!-- Dashboard Page -->
+        <div id="dashboard-page" class="page text-center fade-in">
+            <div class="card">
+                <h1 class="text-3xl font-bold mb-4 text-gray-800">Dashboard</h1>
+                <p id="user-info" class="text-gray-600 mb-6"></p>
+                <p id="user-id" class="text-sm text-gray-500 mb-6 break-all"></p>
+                <button id="start-quiz-btn" class="btn-primary w-full">Start Career Quiz</button>
+                <div class="mt-8">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">Your Recommended Careers</h2>
+                    <ul id="recommendations-list" class="space-y-3 text-left"></ul>
+                </div>
+                <button id="logout-btn" class="btn-secondary w-full mt-8">Log Out</button>
+            </div>
+        </div>
+
+        <!-- Quiz Page -->
+        <div id="quiz-page" class="page fade-in">
+            <div class="card">
+                <h2 class="text-3xl font-bold mb-6 text-gray-800 text-center">Career Quiz</h2>
+                <div class="progress-bar mb-6">
+                    <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+                </div>
+                <div id="quiz-questions"></div>
+                <div class="flex justify-between mt-8">
+                    <button id="prev-btn" class="btn-secondary" style="display: none;">Previous</button>
+                    <button id="next-btn" class="btn-primary">Next</button>
+                    <button id="submit-btn" class="btn-primary" style="display: none;">Submit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Careers Page -->
+        <div id="careers-page" class="page fade-in">
+            <div class="card">
+                <h2 class="text-3xl font-bold mb-6 text-gray-800 text-center">Career Recommendations</h2>
+                <ul id="final-recommendations-list" class="space-y-4"></ul>
+                <button id="back-to-dashboard-btn" class="btn-primary w-full mt-8">Back to Dashboard</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyBOP2ClKDbxXwjkMSAZs-cSy3cpylrI93w",
+    authDomain: "career-guidance-26b34.firebaseapp.com",
+    projectId: "career-guidance-26b34",
+    storageBucket: "career-guidance-26b34.firebasestorage.app",
+    messagingSenderId: "122662677587",
+    appId: "1:122662677587:web:84067e73dbdbf0efcb6aa6",
+    measurementId: "G-B7YYV84HLJ"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
+
+</body>
+</html>
+    </script>
+    <script type="module" src="app.js"></script>
